@@ -13,7 +13,7 @@ from sklearn.decomposition import PCA
 # --------------------------
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
-UNKNOWN_THRESHOLD = 0.5  # Confidence threshold for "Unknown" class (ID=6)
+UNKNOWN_THRESHOLD = 0.4  # Confidence threshold for "Unknown" class (ID=6)
 
 # --------------------------
 # Load features and labels
@@ -110,5 +110,6 @@ print(classification_report(y_val, y_pred_knn, zero_division=0))
 joblib.dump(svm_clf, "svm_model.pkl")
 joblib.dump(knn_clf, "knn_model.pkl")
 joblib.dump(scaler, "scaler.pkl")  # Save the scaler for later use
+joblib.dump(pca, "pca.pkl")
 
-print("\nTrained models and scaler saved successfully.")
+print("\nTrained models, scaler, and PCA saved successfully.")
