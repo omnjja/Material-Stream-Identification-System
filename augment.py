@@ -5,7 +5,7 @@ from PIL import Image, ImageEnhance, ImageOps
 
 dataset = "dataset"
 augmented_dataset = "augmented_dataset"
-target_count = 700
+target_count = 1000
 
 # get all classes in the dataset
 classes = [d for d in os.listdir(dataset) if os.path.isdir(os.path.join(dataset,d))]
