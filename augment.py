@@ -5,104 +5,119 @@ from PIL import Image, ImageEnhance, ImageOps
 
 dataset = "dataset"
 augmented_dataset = "augmented_dataset"
-target_count = 1000
+TARGET_COUNT = 1000
 
-# get all classes in the dataset
-classes = [d for d in os.listdir(dataset) if os.path.isdir(os.path.join(dataset,d))]
-# make augmented class for each class in the dataset
-for this_class in classes:
-    os.makedirs(os.path.join(augmented_dataset, this_class), exist_ok=True)
+# get classes in the dataset
+DATA_CLASSES = []
+for folder in os.listdir(dataset):
+    if os.path.isdir(os.path.join(dataset,folder)):
+        DATA_CLASSES.append(folder)
 
+# generate augmented class for each class in the dataset
+for this_class in DATA_CLASSES:
+    os.makedirs(os.path.join(augmented_dataset, this_class), exist_ok=True) # don't generate error if class already exists
 
+### augmentation process ###
 
-def random_rotate(img, angle_range=(-30, 30)):
-    angle = random.randint(*angle_range)
-    return img.rotate(angle)
+# rotate image by random angle
+def random_rotate(image, angle_range=(-30, 30)):
+    rotation_angle = random.randint(*angle_range)
+    return image.rotate(rotation_angle)
 
-def flip_lr(img):
-    return img.transpose(Image.FLIP_LEFT_RIGHT)
+# flip image left-right
+def flip_horizontally(image):
+    return image.transpose(Image.FLIP_LEFT_RIGHT)
 
-def flip_tb(img):
-    return img.transpose(Image.FLIP_TOP_BOTTOM)
+# flip image top-bottom
+def flip_vertically(image):
+    return image.transpose(Image.FLIP_TOP_BOTTOM)
 
-def random_brightness(img, factor_range=(0.5, 1.7)):
-    enhancer = ImageEnhance.Brightness(img)
-    factor = random.uniform(*factor_range)
-    return enhancer.enhance(factor)
+# change brightness of image randomly (make it darker or lighter)
+def random_brightness(image, brightness_factor_range=(0.5, 1.7)):
+    image_enhancer = ImageEnhance.Brightness(image)  # create enhancer object
+    brightness_factor = random.uniform(*brightness_factor_range) # choose random brightness factor
+    return image_enhancer.enhance(brightness_factor)
 
-def random_contrast(img, factor_range=(0.5, 1.7)):
-    enhancer = ImageEnhance.Contrast(img)
-    factor = random.uniform(*factor_range)
-    return enhancer.enhance(factor)
+# change contrast of image randomly
+def random_contrast(image, contrast_factor_range=(0.5, 1.7)):
+    image_enhancer = ImageEnhance.Contrast(image)  # create enhancer object
+    contrast_factor = random.uniform(*contrast_factor_range)  # choose random contrast factor
+    return image_enhancer.enhance(contrast_factor)
 
-def random_scale(img, scale_range=(0.7, 1.5)):
-    scale_factor = random.uniform(*scale_range)
-    new_width = int(img.width * scale_factor)
-    new_height = int(img.height * scale_factor)
-    return img.resize((new_width, new_height))
+# scale the image randomly
+def random_scaling(image, scaling_range=(0.7, 1.5)):
+    scaling_factor = random.uniform(*scaling_range)  # choose random scaling factor
+    image_new_width = int(image.width * scaling_factor)
+    # calculate new dimensions of the image
+    image_new_height = int(image.height * scaling_factor)
+    return image.resize((image_new_width, image_new_height))
 
-def random_crop(img, max_percent=15):
+# crop part of the image randomly
+def random_crop(image, max_crop_percent=15):
     try:
-        max_crop_w = int(img.width * max_percent / 100)
-        max_crop_h = int(img.height * max_percent / 100)
+        # max allowed cropped pixels
+        max_crop_width = int(image.width * max_crop_percent / 100)
+        max_crop_height = int(image.height * max_crop_percent / 100)
+        # determine random cropped boundaries
+        left = random.randint(0, max_crop_width)
+        top = random.randint(0, max_crop_height)
+        right = image.width - random.randint(0, max_crop_width)
+        bottom = image.height - random.randint(0, max_crop_height)
 
-        left = random.randint(0, max_crop_w)
-        top = random.randint(0, max_crop_h)
-        right = img.width - random.randint(0, max_crop_w)
-        bottom = img.height - random.randint(0, max_crop_h)
-
-        cropped_image = img.crop((left, top, right, bottom))
-
-        cropped_image = cropped_image.resize(img.size)
+        cropped_image = image.crop((left, top, right, bottom))
+        # resize the cropped image to be the same size as the original one
+        cropped_image = cropped_image.resize(image.size)
         return cropped_image
     except:
-        return img
+        return image # return the original image in case of any errors
 
-
-def augment_image(img):
-    augmented_images = []
-    augmented_images.append(random_rotate(img)) # works
-    augmented_images.append(flip_lr(img)) # works
-    augmented_images.append(flip_tb(img)) # works
-    augmented_images.append(random_brightness(img))
-    augmented_images.append(random_contrast(img))
-    augmented_images.append(random_scale(img))
-    augmented_images.append(random_crop(img))
+def apply_image_augmentation(image):
+    augmented_images = [random_rotate(image), flip_horizontally(image), flip_vertically(image),
+                        random_brightness(image), random_contrast(image), random_scaling(image), random_crop(image)]
     return augmented_images
 
-for this_class in classes:
-    class_path = os.path.join(dataset, this_class)
-    augmented_class_path = os.path.join(augmented_dataset, this_class)
-    images = [f for f in os.listdir(class_path) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+### apply augmentation process ###
 
-    for img_name in images:
-        src_path = os.path.join(class_path, img_name)
-        dst_path = os.path.join(augmented_class_path, img_name)
+# loop over all classes
+for this_class in DATA_CLASSES:
+    class_path = os.path.join(dataset, this_class) # get class path
+    augmented_class_path = os.path.join(augmented_dataset, this_class) # generate new augmented class path
+    # get all image files in the class
+    images = []
+    for file in os.listdir(class_path):
+        if  file.lower().endswith((".png", ".jpg", ".jpeg")):
+            images.append(file)
+
+    # copy original image to augmented class folder
+    for image_name in images:
+        source_path = os.path.join(class_path, image_name)
+        destination_path = os.path.join(augmented_class_path, image_name)
         try:
-            shutil.copy(src_path, dst_path)
+            shutil.copy(source_path, destination_path)
         except Exception as e:
-            print(f"Warning: Skipping original file {src_path} -> {e}")
+            print(f"Warning: Skipping original image file {source_path} -> {e}")
 
-    current_count = len(images)
+    current_count = len(images) # number of images in the class
     i = 0
-    while current_count < target_count:
-        img_name = images[i % len(images)]
-        img_path = os.path.join(class_path, img_name)
+    # do augmentation until the target count reached
+    while current_count < TARGET_COUNT:
+        image_name = images[i % len(images)]
+        image_path = os.path.join(class_path, image_name)
+        # open image and convert it to RGB
         try:
-            img = Image.open(img_path).convert("RGB")
+            img = Image.open(image_path).convert("RGB")
         except Exception as e:
-            print(f"Warning: Skipping file {img_path} -> {e}")
+            print(f"Warning: Skipping file {image_path} -> {e}")
             i += 1
             continue
+        final_augmented_images = apply_image_augmentation(img) # apply augmentation function
 
-        augmented_imgs = augment_image(img)
-
-        for aug_img in augmented_imgs:
-            if current_count >= target_count:
+        for augmented_image in final_augmented_images:
+            if current_count >= TARGET_COUNT: # break if target count reached
                 break
-            save_name = f"{os.path.splitext(img_name)[0]}_aug_{current_count}.jpg"
+            image_save_name = f"{os.path.splitext(image_name)[0]}_augmented_{current_count}.jpg" # create unique save name
             try:
-                aug_img.save(os.path.join(augmented_class_path, save_name))
+                augmented_image.save(os.path.join(augmented_class_path, image_save_name))
                 current_count += 1
             except Exception as e:
                 print(f"Warning: Could not save augmented image -> {e}")

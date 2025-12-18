@@ -4,26 +4,17 @@ import numpy as np
 import joblib
 from skimage.feature import hog, local_binary_pattern
 
-
-# -----------------------------
-# Config
-# -----------------------------
-IMAGE_SIZE = (128, 128)
+# fixed size use in training
+FIXED_IMAGE_SIZE = (128, 128)
 UNKNOWN_THRESHOLD = 0.4
 
-
-# -----------------------------
-# Preprocessing
-# -----------------------------
-def preprocess_image(image):
-    image = cv2.resize(image, IMAGE_SIZE)
-    image = image.astype(np.float32) / 255.0
+# image preprocessing
+def preprocessing(image):
+    # resize image to fixed size
+    image = cv2.resize(image, FIXED_IMAGE_SIZE)
+    image = image.astype(np.float32) / 255.0 # do normalization
     return image
 
-
-# -----------------------------
-# Feature Extraction
-# -----------------------------
 def extract_hog_features(image):
     gray = cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
     return hog(
@@ -35,12 +26,10 @@ def extract_hog_features(image):
         feature_vector=True
     )
 
-
 def extract_multiscale_hog(image):
     hog_128 = extract_hog_features(image)
-
     small = cv2.resize(image, (64, 64))
-    small = cv2.resize(small, IMAGE_SIZE)
+    small = cv2.resize(small, FIXED_IMAGE_SIZE)
     hog_64 = extract_hog_features(small)
 
     return np.concatenate([hog_128, hog_64])
@@ -83,46 +72,41 @@ def extract_features(image):
     ])
 
 
-# -----------------------------
-# Prediction Function (REQUIRED)
-# -----------------------------
-def predict(dataFilePath, bestModelPath):
-    """
-    dataFilePath: folder containing images
-    bestModelPath: path to trained model (.pkl)
-    returns: list of predictions
-    """
 
-    # Load model + preprocessing tools
+# prediction
+def predict(dataFilePath, bestModelPath):
+    # load model && preprocessing tools
     model = joblib.load(bestModelPath)
     scaler = joblib.load("scaler.pkl")
     pca = joblib.load("pca.pkl")
 
     predictions = []
 
-    image_files = [
-        f for f in os.listdir(dataFilePath)
-        if f.lower().endswith((".jpg", ".png", ".jpeg"))
-    ]
+    image_files = []
+    for file in os.listdir(dataFilePath):
+        if file.lower().endswith((".jpg", ".png", ".jpeg")):
+            image_files.append(file)
 
-    for img_name in image_files:
-        img_path = os.path.join(dataFilePath, img_name)
-        img = cv2.imread(img_path)
+    # loop over image files
+    for image_name in image_files:
+        image_path = os.path.join(dataFilePath, image_name)
+        image = cv2.imread(image_path)
 
-        if img is None:
-            predictions.append(6)
+        if image is None:
+            predictions.append(6) # unknown case
             continue
 
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = preprocess_image(img)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = preprocessing(image) # apply preprocessing
 
-        features = extract_features(img)
+        features = extract_features(image) # apply feature extraction
         features = features.reshape(1, -1)
 
-        # Apply same transformations as training
+        # apply same scaling as training
         features = scaler.transform(features)
         features = pca.transform(features)
 
+        # prediction probabilities
         probs = model.predict_proba(features)[0]
         max_prob = np.max(probs)
 
