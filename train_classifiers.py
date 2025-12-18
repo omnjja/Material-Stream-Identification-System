@@ -4,112 +4,139 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import StandardScaler
-import joblib
 from sklearn.decomposition import PCA
+import joblib
 
+# ---------------------------------------------------------------------
+# basic settings 
+# -------------------------------------------------
+test_ratio = 0.2
+seed_value = 42
+unknown_limit = 0.4   # law el confidence a2al mn kda n3tbr el image Unknown
 
-# --------------------------
-# Parameters
-# --------------------------
-TEST_SIZE = 0.2
-RANDOM_STATE = 42
-UNKNOWN_THRESHOLD = 0.4  # Confidence threshold for "Unknown" class (ID=6)
+# -------------------------------------------------------------
+# load extracted features
+# -------------------------------------------------
+# X: features matrix
+# y: labels
+X_data = np.load("X_features.npy")
+y_data = np.load("y_labels.npy")
 
-# --------------------------
-# Load features and labels
-# --------------------------
-X = np.load("X_features.npy")  # [num_samples, num_features]
-y = np.load("y_labels.npy")    # [num_samples]
+print("Features shape:", X_data.shape)
+print("Labels shape:", y_data.shape)
 
-print("Features shape:", X.shape)
-print("Labels shape:", y.shape)
-
-# --------------------------
-# Split into Train / Validation sets
-# --------------------------
-X_train, X_val, y_train, y_val = train_test_split(
-    X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
+# -------------------------------------------------
+# split data into training and validation
+# --------------------------------------------------------
+# bn2sm el data 80% train w 20% validation
+X_tr, X_val, y_tr, y_val = train_test_split(
+    X_data,
+    y_data,
+    test_size=test_ratio,
+    random_state=seed_value,
+    stratify=y_data   # 3shan el classes tfdl mtwazna
 )
 
-print("Train shape:", X_train.shape)
+print("Train shape:", X_tr.shape)
 print("Validation shape:", X_val.shape)
 
-# --------------------------
-# Feature Scaling
-# --------------------------
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_val = scaler.transform(X_val)
+# -------------------------------------------------
+# feature scaling
+# --------------------------------------------------------------
+# scaling mohem 3shan SVM w KNN ysht8lo  kwys
+scaler_obj = StandardScaler()
 
+X_tr = scaler_obj.fit_transform(X_tr)   # fit + transform on train
+X_val = scaler_obj.transform(X_val)     # transform only on validation
 
+# -------------------------------------------------
+# PCA for dimensionality reduction
+# ---------------------------------------------------------
+# bn2ll 3dd el features bs mn8er ma ndy3 information
+pca_obj = PCA(n_components=0.95, random_state=seed_value)
 
-pca = PCA(n_components=0.95, random_state=42)
-X_train_pca = pca.fit_transform(X_train)
-X_val_pca = pca.transform(X_val)
+X_tr_pca = pca_obj.fit_transform(X_tr)
+X_val_pca = pca_obj.transform(X_val)
 
-print("Reduced dims:", X_train_pca.shape[1])
+print("Number of features after PCA:", X_tr_pca.shape[1])
 
-# --------------------------
-# Train SVM Classifier
-# --------------------------
-svm_clf = SVC(
+# ------------------------------------------------------------
+# SVM model training
+# --------------------------------------------------
+# SVM with RBF kernel
+svm_model = SVC(
     kernel="rbf",
     C=10,
-    gamma='scale',
-    class_weight="balanced",
-    probability=True
+    gamma="scale",
+    class_weight="balanced",  # 3shan yt3aml m3 el imbalance
+    probability=True          # 3shan n3rf el confidence
 )
 
-svm_clf.fit(X_train_pca, y_train)
+svm_model.fit(X_tr_pca, y_tr)
 
+# -------------------------------------------------
+# KNN model training
+# ---------------------------------------------------------------------------
+# KNN based on cosine distance
+knn_model = KNeighborsClassifier(
+    n_neighbors=5,
+    weights="distance",
+    metric="cosine"
+)
 
-# --------------------------
-# Train k-NN Classifier
-# --------------------------
-knn_clf = KNeighborsClassifier(n_neighbors=5, weights='distance',metric='cosine')
-knn_clf.fit(X_train_pca, y_train)
+knn_model.fit(X_tr_pca, y_tr)
 
-# --------------------------
-# Unknown Class Handling
-# --------------------------
-def predict_with_rejection(model, X, threshold=UNKNOWN_THRESHOLD):
+# -----------------------------------------------------------
+# prediction with unknown handling
+# -------------------------------------------------
+def predict_with_unknown(model, features, limit=unknown_limit):
     """
-    Predict class labels with rejection for low-confidence predictions.
-    Returns 6 for unknown predictions.
+    
+    Predict class or return Unknown if confidence is low
+
+    law el model msh wask f el prediction
+    bnrg3 class Unknown (ID = 6)
     """
-    probs = model.predict_proba(X)
-    preds = []
-    classes = model.classes_
-    for p in probs:
-        max_prob = max(p)
-        if max_prob < threshold:
-            preds.append(6)  # Unknown class
+    all_probs = model.predict_proba(features)
+    final_preds = []
+
+    class_ids = model.classes_
+
+    for prob in all_probs:
+        highest = np.max(prob)
+
+        if highest < limit:
+            final_preds.append(6)  # Unknown
         else:
-            preds.append(classes[np.argmax(p)])
-    return np.array(preds)
+            idx = np.argmax(prob)
+            final_preds.append(class_ids[idx])
 
-# --------------------------
-# SVM Predictions
-# --------------------------
-y_pred_svm = predict_with_rejection(svm_clf, X_val_pca, threshold=UNKNOWN_THRESHOLD)
-print("\nSVM Classifier Results (with Unknown Handling):")
-print("Accuracy:", accuracy_score(y_val, y_pred_svm))
-print(classification_report(y_val, y_pred_svm, zero_division=0))
+    return np.array(final_preds)
 
-# --------------------------
-# k-NN Predictions
-# --------------------------
-y_pred_knn = predict_with_rejection(knn_clf, X_val_pca, threshold=UNKNOWN_THRESHOLD)
-print("\nk-NN Classifier Results (with Unknown Handling):")
-print("Accuracy:", accuracy_score(y_val, y_pred_knn))
-print(classification_report(y_val, y_pred_knn, zero_division=0))
+# -------------------------------------------------
+# evaluate SVM
+# -----------------------------------------------------------------------
+svm_preds = predict_with_unknown(svm_model, X_val_pca)
 
-# --------------------------
-# Save models and scaler
-# --------------------------
-joblib.dump(svm_clf, "svm_model.pkl")
-joblib.dump(knn_clf, "knn_model.pkl")
-joblib.dump(scaler, "scaler.pkl")  # Save the scaler for later use
-joblib.dump(pca, "pca.pkl")
+print("\nSVM Results:")
+print("Accuracy:", accuracy_score(y_val, svm_preds))
+print(classification_report(y_val, svm_preds, zero_division=0))
 
-print("\nTrained models, scaler, and PCA saved successfully.")
+# ----------------------------------------------------------------------------------------
+# evaluate KNN
+# -------------------------------------------------
+knn_preds = predict_with_unknown(knn_model, X_val_pca)
+
+print("\nKNN Results:")
+print("Accuracy:", accuracy_score(y_val, knn_preds))
+print(classification_report(y_val, knn_preds, zero_division=0))
+
+# --------------------------------------------------------
+# save models and preprocessing tools
+# ----------------------------------------------------------------------------
+joblib.dump(svm_model, "svm_model.pkl")
+joblib.dump(knn_model, "knn_model.pkl")
+joblib.dump(scaler_obj, "scaler.pkl")
+joblib.dump(pca_obj, "pca.pkl")
+
+print("\nModels and preprocessing objects saved successfully")
