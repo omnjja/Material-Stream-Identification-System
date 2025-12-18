@@ -32,8 +32,8 @@ The pipeline includes:
 
 ## Model Training
 
-- `train.py` trains SVM and K-NN classifiers  
-- Models are saved in `models/` (`svm_model.pkl`, `knn_model.pkl`, `scaler.pkl`, `pca.pkl`)  
+- `train_classifier.py` trains SVM and K-NN classifiers  
+- Models are  (`svm_model.pkl`, `knn_model.pkl`, `scaler.pkl`, `pca.pkl`)  
 
 ---
 
