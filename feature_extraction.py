@@ -1,177 +1,223 @@
-import cv2
 import os
+import cv2
 import numpy as np
 from skimage.feature import hog, local_binary_pattern
 from tqdm import tqdm
 
-# -----------------------------
-# Configuration
-# -----------------------------
-IMAGE_SIZE = (128, 128)
-DATASET_PATH = "augmented_dataset"
-NEW_PATH ="dataset"
+# ------------------------------------------------------------------
+# -----------------------------------------------------------------------
+img_dim = (128, 128)       # el size da wa7ed ll images kolaha 3shan el features teb2a consistent
+
+AUG_folder = "augmented_dataset" 
+ORG_folder = "dataset"            
+
+
+# class names 
 CLASSES = ["Glass", "Paper", "Cardboard", "Plastic", "Metal", "Trash"]
+# tartib el classes mohem 3shan el labels teb2a mazbota
 
-# -----------------------------
-# Image Preprocessing
-# -----------------------------
-def preprocess_image(image, size=IMAGE_SIZE):
-    image = cv2.resize(image, size)
-    image = image.astype(np.float32) / 255.0
-    return image
+# -------------------------------------------------
+# image preparation
+# -------------------------------------------------
+def fix_image(img):
+    """
+    Resize image and normalize it
 
-# -----------------------------
-# HOG Feature Extraction
-# -----------------------------
-def extract_hog_features(image):
-    gray = cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    return hog(
+    bna3mel resize 3shan kol el images teb2a nafs el size  
+    bna2sm 3la 255 3shan el values teb2a ben 0 w 1  
+    da by5aly el training ashl w asr3
+    """
+    img = cv2.resize(img, img_dim)
+    img = img.astype(np.float32)
+    img = img / 255.0
+    return img
+
+# -------------------------------------------------
+# HOG feature extraction
+# -------------------------------------------------
+def hog_single(img):
+    """
+    hena bntl3 hog features mn sora wa7da  
+    awl 7aga bn7wlha grayscale  
+    ba3d kda hog bytl3 features el shape w el edges
+    """
+    # bnrg3 el image ll range 0-255 3shan OpenCV y3rf yshtaghal
+    gray = cv2.cvtColor((img * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+
+    # hog function btst5dm gradients w directions
+    f = hog(
         gray,
-        orientations=9,
-        pixels_per_cell=(16, 16),
-        cells_per_block=(2, 2),
+        orientations=9,          # 3dd el directions
+        pixels_per_cell=(16, 16),# size el cell
+        cells_per_block=(2, 2),  # grouping el cells
         block_norm="L2-Hys",
-        visualize=False,
-        feature_vector=True
+        feature_vector=True      # 3shan yrg3 vector wa7ed
     )
+    return f
 
-def extract_multiscale_hog(image):
-    hog_128 = extract_hog_features(image)
+def hog_two_scales(img):
+    """
+    bnst5dm hog 3la scale kbir w scale asghar  
+    el idea en el image momkn teb2a details ktera aw 2lela  
+    fa bngrb aktar mn size
+    """
+    # hog mn el image el aslya
+    f_big = hog_single(img)
 
-    small = cv2.resize(image, (64, 64))
-    small = cv2.resize(small, IMAGE_SIZE)
-    hog_64 = extract_hog_features(small)
+    # bn3ml resize ll image size asghar
+    small_img = cv2.resize(img, (64, 64))
+    small_img = cv2.resize(small_img, img_dim)
 
-    return np.concatenate([hog_128, hog_64])
+    # hog mn el image el soghayara
+    f_small = hog_single(small_img)
 
-# -----------------------------
-# LBP Feature Extraction
-# -----------------------------
-def extract_lbp_features(image, P=8, R=2):
-    gray = cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    lbp = local_binary_pattern(gray, P, R, method="uniform")
+    # bngm3 el 2 vectors f vector wa7ed
+    return np.concatenate((f_big, f_small))
 
-    n_bins = P + 2
-    hist, _ = np.histogram(lbp, bins=n_bins, range=(0, n_bins))
+# -------------------------------------------------
+# LBP feature
+# -------------------------------------------------
+def lbp_histogram(img):
+    """
+    LBP bt3br 3n el texture  
+    msl textures bta3t el paper aw cardboard  
+    btfr2 ben el materials
+    """
+    gray = cv2.cvtColor((img * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+
+    # local binary pattern
+    lbp_img = local_binary_pattern(gray, 8, 2, method="uniform")
+
+    # bn7sb histogram ll LBP values
+    hist, _ = np.histogram(lbp_img, bins=10, range=(0, 10))
     hist = hist.astype(np.float32)
-    hist /= (hist.sum() + 1e-6)
 
+    # normalization 3shan el values mat2srsh
+    hist = hist / (hist.sum() + 1e-6)
     return hist
 
-# -----------------------------
-# Color Histograms
-# -----------------------------
-def extract_color_histogram(image, bins=(8, 8, 8)):
-    image_uint8 = (image * 255).astype(np.uint8)
-    hist = cv2.calcHist(
-        [image_uint8],
-        [0, 1, 2],
+# -------------------------------------------------
+# RGB color histogram
+# -------------------------------------------------
+def rgb_color_hist(img):
+    """
+    hena bnshof el colors distribution bel RGB  
+    msl el plastic lono byb2a wa7ed aktar
+    """
+    img = (img * 255).astype(np.uint8)
+
+    h = cv2.calcHist(
+        [img],
+        [0, 1, 2],   # R G B channels
         None,
-        bins,
+        (8, 8, 8),
         [0, 256, 0, 256, 0, 256]
     )
-    hist = hist.flatten().astype(np.float32)
-    hist /= (hist.sum() + 1e-6)
-    return hist
 
-def extract_hsv_histogram(image, bins=(8, 8, 8)):
-    hsv = cv2.cvtColor((image * 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
-    hist = cv2.calcHist(
+    h = h.flatten().astype(np.float32)
+    h = h / (h.sum() + 1e-6)
+    return h
+
+# -------------------------------------------------
+# HSV color histogram
+# -------------------------------------------------
+def hsv_color_hist(img):
+    """
+    HSV bykon ahsn f conditions el light el mo5tlfa  
+    fa da bysa3d el model yfhm el image aktar
+    """
+    hsv = cv2.cvtColor((img * 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
+
+    h = cv2.calcHist(
         [hsv],
         [0, 1, 2],
         None,
-        bins,
+        (8, 8, 8),
         [0, 180, 0, 256, 0, 256]
     )
-    hist = hist.flatten().astype(np.float32)
-    hist /= (hist.sum() + 1e-6)
-    return hist
 
-# -----------------------------
-# Combine Features
-# -----------------------------
-def extract_features(image):
-    hog_feat = extract_multiscale_hog(image)
-    lbp_feat = extract_lbp_features(image)
-    rgb_feat = extract_color_histogram(image)
-    hsv_feat = extract_hsv_histogram(image)
+    h = h.flatten().astype(np.float32)
+    h = h / (h.sum() + 1e-6)
+    return h
 
-    return np.concatenate([
-        hog_feat,
-        lbp_feat,
-        rgb_feat,
-        hsv_feat
-    ])
+# -------------------------------------------------
+# combine all features together
+# -------------------------------------------------
+def build_feature_vector(img):
+    """
+    hena bngm3 kol el features  
+    hog + lbp + rgb + hsv  
+    3shan el model yakhod sora kamla mn kol el zwaya
+    """
+    features = []
 
-# -----------------------------
-# Dataset Feature Extraction
-# -----------------------------
-X = []
-y = []
+    features.append(hog_two_scales(img))   # shape features
+    features.append(lbp_histogram(img))    # texture features
+    features.append(rgb_color_hist(img))   # color RGB
+    features.append(hsv_color_hist(img))   # color HSV
+
+    return np.concatenate(features)
+
+# -------------------------------------------------
+# main feature extraction loop
+# -------------------------------------------------
+X_list = []   # hena hn5zn el feature vectors
+y_list = []   # hena hn5zn el labels
 
 print("\nStarting feature extraction...\n")
 
-for label, cls in enumerate(CLASSES):
-    class_dir = os.path.join(DATASET_PATH, cls)
-    image_files = [
-        f for f in os.listdir(class_dir)
-        if f.lower().endswith((".jpg", ".png", ".jpeg"))
-    ]
+# bnlf 3la el augmented w el original dataset
+for current_folder in [AUG_folder, ORG_folder]:
 
-    print(f"Processing '{cls}' ({len(image_files)} images)")
+    # bnlf 3la kol class
+    for class_index in range(len(CLASSES)):
+        class_name = CLASSES[class_index]
+        class_path = os.path.join(current_folder, class_name)
 
-    for img_name in tqdm(image_files, desc=cls):
-        img_path = os.path.join(class_dir, img_name)
-        img = cv2.imread(img_path)
+        all_images = os.listdir(class_path)
+        print(f"Class {class_name}: {len(all_images)} images")
 
-        if img is None:
-            continue
+        # bnlf 3la kol sora gwa el class
+        for img_name in tqdm(all_images):
 
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = preprocess_image(img)
+            # bn-skip ay file msh image
+            if not img_name.lower().endswith((".jpg", ".png", ".jpeg")):
+                continue
 
-        features = extract_features(img)
-        X.append(features)
-        y.append(label)
+            full_path = os.path.join(class_path, img_name)
+            img = cv2.imread(full_path)
 
+            # lw el sora byza msh ma2roya
+            if img is None:
+                continue
 
-##############################################################
-for label, cls in enumerate(CLASSES):
-    class_dir = os.path.join(NEW_PATH, cls)
-    image_files = [
-        f for f in os.listdir(class_dir)
-        if f.lower().endswith((".jpg", ".png", ".jpeg"))
-    ]
+            # BGR -> RGB
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    print(f"Processing '{cls}' ({len(image_files)} images)")
+            # preprocessing
+            img = fix_image(img)
 
-    for img_name in tqdm(image_files, desc=cls):
-        img_path = os.path.join(class_dir, img_name)
-        img = cv2.imread(img_path)
+            # feature extraction
+            vec = build_feature_vector(img)
 
-        if img is None:
-            continue
+            # store data
+            X_list.append(vec)
+            y_list.append(class_index)
 
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = preprocess_image(img)
+# -------------------------------------------------
+# convert to numpy arrays
+# -------------------------------------------------
+X_list = np.array(X_list, dtype=np.float32)
+y_list = np.array(y_list, dtype=np.int64)
 
-        features = extract_features(img)
-        X.append(features)
-        y.append(label)
+print("\nExtraction finished")
+print("X shape:", X_list.shape)
+print("y shape:", y_list.shape)
 
-X = np.array(X, dtype=np.float32)
-y = np.array(y, dtype=np.int64)
+# -------------------------------------------------
+# save features
+# -------------------------------------------------
+np.save("X_features.npy", X_list)
+np.save("y_labels.npy", y_list)
 
-print("\nFeature extraction completed!")
-print("Feature matrix shape:", X.shape)
-print("Labels shape:", y.shape)
-
-# -----------------------------
-# Save Features
-# -----------------------------
-np.save("X_features.npy", X)
-np.save("y_labels.npy", y)
-
-print("\nSaved:")
-print(" - X_features.npy")
-print(" - y_labels.npy")
+print("\nFiles saved successfully")
